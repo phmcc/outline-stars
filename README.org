@@ -1,6 +1,6 @@
 #+TITLE: outline-stars
 #+AUTHOR: Paul H. McClelland
-#+OPTIons: toc:0 num:nil
+#+OPTIONS: toc:nil num:nil
 
 *Org-style star headings for outline-minor-mode*
 
