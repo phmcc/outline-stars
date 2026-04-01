@@ -1,0 +1,25 @@
+#+TITLE: Changelog
+#+AUTHOR: Paul H. McClelland
+#+OPTIONS: toc:0 num:nil
+
+All notable changes to ~outline-stars~ are documented in this file.
+
+* 0.2.0 (2026-03-31)
+
+- New customization ~outline-stars-section-comments~ (default ~t~): uses section-level comment prefixes (=;;; *=, =### *=) for modes with single-character comment starters; multi-character starters like =//= are unaffected, avoiding Doxygen conflicts; set to nil for classic ~outshine~ behavior (=;; *=, =## *=)
+- New command ~outline-stars-cycle-buffer~: cycle global visibility through show all, headings only, and top-level, from any point in the buffer
+- New command ~outline-stars-sort-siblings~: alphabetically sort sibling headings under the current parent, carrying their subtrees (prefix argument for reverse order)
+- New customization ~outline-stars-promote-subtree-p~: when non-nil (the default), ~outline-stars-promote~ and ~outline-stars-demote~ operate on the entire subtree; when nil, only the current heading is changed
+- ~outline-stars-promote~ and ~outline-stars-demote~ now consult ~outline-stars-promote-subtree-p~; explicit ~outline-stars-promote-subtree~ and ~outline-stars-demote-subtree~ remain available for direct use
+
+* 0.1.0 (2026-03-28)
+
+Initial release.
+
+- Global minor mode ~outline-stars-mode~ for automatic activation
+- Comment-prefix calculation via ~comment-start~ and ~comment-add~
+- Per-level fontification with ~outline-stars-level-N~ faces
+- Imenu integration for heading navigation
+- Structure editing: ~outline-stars-insert-heading~, ~outline-stars-promote-subtree~, ~outline-stars-demote-subtree~, ~outline-stars-narrow-to-subtree~
+- Nullifies ~outline-search-function~ (Emacs 29+) for correct regexp handling
+- Runs on ~after-change-major-mode-hook~ to override mode-specific defaults

@@ -1,0 +1,177 @@
+#+TITLE: outline-stars
+#+AUTHOR: Paul H. McClelland
+#+OPTIons: toc:0 num:nil
+
+*Org-style star headings for outline-minor-mode*
+
+~outline-stars~ brings ~org~-like section folding to non-~org~ buffers using star-based comment headings (~;;; *~, ~### *~, ~// *~, /etc./) and the built-in ~outline-minor-mode~.  It handles comment prefix detection, per-level fontification, ~imenu~ integration, and star-aware structure editing in a single, dependency-free file.
+
+* Design and Scope
+
+The [[https://github.com/alphapapa/outshine][outshine]] package introduced the idea of using comment-prefixed star headings to bring ~org~-style folding and navigation to source code buffers.  Continuing in this spirit, ~outline-stars~ provides similar navigation features but in a more stable and lightweight manner, building on the improvements that ~outline-minor-mode~ has received since Emacs 28 (visibility cycling, heading fontification, margin buttons, /etc./).
+
+Where ~outshine~ carried a full ~org~-emulation layer with dependencies on ~outorg~ and ~cl~, ~outline-stars~ limits itself to what the built-in ~outline~ system cannot do on its own: deriving headings from comment syntax, fontifying heading text without coloring the comment prefix, providing star-aware promote/demote, and working around the ~outline-search-function~ issue introduced in Emacs 29.  Everything else—cycling, folding, subtree movement—is delegated to ~outline-minor-mode~ directly.
+
+By default, headings use section-level comment prefixes (/e.g./, ~;;; *~ in elisp) where the language supports it.  These degrade gracefully in vanilla Emacs: a file with ~;;; *~ headings is foldable out of the box, since ~lisp-outline-search~ already recognizes ~;;;~ as a section heading.  For languages with multi-character comment starters (~//~ in C, C++, Java), the prefix is left unchanged to avoid conflicts with documentation comment syntax like Doxygen.
+
+* Features
+
+- *Comment-aware heading detection* — derives the heading prefix from ~comment-start~ and ~comment-add~; works across elisp, R, Python, shell, C, and any other mode with a comment convention
+- *Section-level comments by default* — uses ~;;; *~ / ~### *~ for single-character comment starters, improving interoperability with vanilla Emacs; configurable via ~outline-stars-section-comments~
+- *Per-level fontification* — applies ~outline-stars-level-N~ faces to heading text only, leaving the comment prefix and stars in their original face
+- *Imenu integration* — exposes star headings as navigable ~imenu~ entries alongside any existing mode entries
+- *Star-aware promote/demote* — single-heading and whole-subtree variants, with configurable default behavior via ~outline-stars-promote-subtree-p~
+- *Global visibility cycling* — cycles through show all, headings only, and top-level from any point in the buffer
+- *Sibling sorting* — alphabetically sort headings at the same level, carrying their subtrees
+
+* Installation
+
+~outline-stars~ is not yet available in any Emacs package repository.
+
+** With ~elpaca~ or ~straight~
+
+Install directly from the online repository:
+
+#+begin_src emacs-lisp
+(use-package outline-stars
+  :ensure (:host codeberg :repo "phmcc/outline-stars")
+  :config (outline-stars-mode 1))
+#+end_src
+
+** With ~package-vc~
+
+#+begin_src emacs-lisp
+(use-package outline-stars
+  :vc (outline-stars :url "https://codeberg.org/phmcc/outline-stars")
+  :config (outline-stars-mode 1))
+#+end_src
+
+** Manual
+
+Clone the repository and add it to the load path:
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "~/path/to/outline-stars")
+(require 'outline-stars)
+(outline-stars-mode 1)
+#+end_src
+
+* Quick Start
+
+** 1. Enable the global minor mode
+
+#+begin_src emacs-lisp
+(outline-stars-mode 1)
+#+end_src
+
+This activates star-based headings for all modes listed in ~outline-stars-modes~ (defaults to ~prog-mode~).
+
+** 2. Add additional modes if needed
+
+#+begin_src emacs-lisp
+(setq outline-stars-modes '(prog-mode LaTeX-mode ledger-mode))
+#+end_src
+
+** 3. Use headings in your files
+
+Headings are comment lines followed by stars indicating depth:
+
+#+begin_example
+;;; * Top-level section
+;;; ** Subsection
+;;; *** Sub-subsection
+#+end_example
+
+Standard ~outline-minor-mode~ keybindings work immediately: ~TAB~ on a heading to cycle visibility, ~C-c @ C-t~ to fold all, /etc./
+
+* Heading Convention
+
+By default, headings use section-level comments for modes with single-character comment starters:
+
+| Mode           | Level 1 | Level 2 | Level 3 |
+|----------------+---------+---------+---------|
+| Emacs Lisp     | ~;;; *~   | ~;;; **~  | ~;;; ***~ |
+| R / Python     | ~### *~   | ~### **~  | ~### ***~ |
+| Shell          | ~## *~    | ~## **~   | ~## ***~  |
+| C / C++ / Java | ~// *~    | ~// **~   | ~// ***~  |
+
+Multi-character comment starters like =//= are never extended, avoiding conflicts with Doxygen and similar documentation comment syntax.
+
+** Classic outshine convention
+
+Set ~outline-stars-section-comments~ to nil for the original outshine convention:
+
+#+begin_src emacs-lisp
+(setq outline-stars-section-comments nil)
+#+end_src
+
+| Mode           | Level 1 | Level 2 | Level 3 |
+|----------------+---------+---------+---------|
+| Emacs Lisp     | ~;; *~    | ~;; **~   | ~;; ***~  |
+| R / Python     | ~## *~    | ~## **~   | ~## ***~  |
+| Shell          | ~# *~     | ~# **~    | ~# ***~   |
+| C / C++ / Java | ~// *~    | ~// **~   | ~// ***~  |
+
+* Commands
+
+| Command                         | Description                                          |
+|---------------------------------+------------------------------------------------------|
+| ~outline-stars-insert-heading~    | Insert a heading at the current level                |
+| ~outline-stars-promote~           | Promote heading (or subtree, see customization)      |
+| ~outline-stars-demote~            | Demote heading (or subtree, see customization)       |
+| ~outline-stars-promote-subtree~   | Always promote heading and all children by one level |
+| ~outline-stars-demote-subtree~    | Always demote heading and all children by one level  |
+| ~outline-stars-narrow-to-subtree~ | Narrow buffer to the current subtree                 |
+| ~outline-stars-cycle-buffer~      | Cycle visibility: all → headings → top-level → all   |
+| ~outline-stars-sort-siblings~     | Alphabetically sort sibling headings with subtrees   |
+
+All standard ~outline-minor-mode~ commands (~outline-cycle~, ~outline-hide-sublevels~, ~outline-move-subtree-up~, /etc./) work as expected with star headings.
+
+* Faces
+
+Heading text is fontified with ~outline-stars-level-1~ through ~outline-stars-level-8~.  These inherit from the built-in ~outline-1~ through ~outline-8~ faces by default.
+
+To customize per-mode:
+
+#+begin_src emacs-lisp
+(defun my/ess-outline-faces ()
+  (face-remap-add-relative 'outline-stars-level-1 '(:foreground "#70BCFF"))
+  (face-remap-add-relative 'outline-stars-level-2 '(:foreground "#9D75DB")))
+(add-hook 'ess-mode-hook #'my/ess-outline-faces)
+#+end_src
+
+* Customization
+
+| Variable                        | Default     | Description                                         |
+|---------------------------------+-------------+-----------------------------------------------------|
+| ~outline-stars-modes~             | ~(prog-mode)~ | Parent modes where stars activate                   |
+| ~outline-stars-max-level~         | ~8~           | Maximum heading depth                               |
+| ~outline-stars-promote-subtree-p~ | ~t~           | Whether promote/demote operates on the full subtree |
+| ~outline-stars-section-comments~  | ~t~           | Use section-level comments (=;;;=, =###=) as prefix     |
+
+* Technical Details
+
+** File structure
+
+| File              | Description                                                   |
+|-------------------+---------------------------------------------------------------|
+| ~outline-stars.el~  | Core: heading detection, fontification, structure editing, global mode |
+
+** Requirements
+
+- Emacs 29.1+ (for ~outline-minor-mode~ improvements and ~outline-search-function~)
+- No external dependencies
+
+** Implementation notes
+
+~outline-stars~ runs on ~after-change-major-mode-hook~ rather than individual mode hooks.  This ensures its ~outline-regexp~ overrides any mode-specific defaults—notably ESS, which sets ~outline-regexp~ to an unmatchable pattern on its own hooks.
+
+On Emacs 29+, several major modes set ~outline-search-function~, which outline commands check /before/ ~outline-regexp~.  When non-nil, ~outline-regexp~ is silently ignored regardless of its value.  ~outline-stars~ nullifies this variable buffer-locally so that its custom regexp is consulted.
+
+* Contributing
+
+Contributions are welcome.  Please open an issue to discuss major changes, follow existing code style, and update documentation as appropriate.
+
+* License
+
+GPL-3.0-or-later
