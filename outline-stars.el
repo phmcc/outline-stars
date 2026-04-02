@@ -25,7 +25,7 @@
 
 ;;; Commentary:
 
-;; outline-stars provides outshine-convention star headings (;; * , ;; ** ,
+;; `outline-stars' provides `outshine'-convention star headings (;; * , ;; ** ,
 ;; ## * , etc.) using the built-in `outline-minor-mode'.  It is a lightweight,
 ;; modern replacement for `outshine' that attempts to solve the same problems
 ;; in fewer lines on a stable core.
@@ -62,14 +62,14 @@
 
 ;;; Code:
 
-;;; * 0. Prerequisites
+;;; * 0 Prerequisites
 
 (require 'outline)
 (require 'cl-lib)
 
-;;; * 1. Foundation
+;;; * 1 Foundation
 
-;;; ** 1.1. Customization
+;;; ** 1.1 Customization
 
 (defgroup outline-stars nil
   "Outshine-style star headings for outline-minor-mode."
@@ -116,7 +116,7 @@ When nil, headings use the classic outshine convention:
   :type 'boolean
   :group 'outline-stars)
 
-;;; ** 1.2. Faces
+;;; ** 1.2 Faces
 
 (defgroup outline-stars-faces nil
   "Faces for outline star headings."
@@ -140,7 +140,7 @@ When nil, headings use the classic outshine convention:
 (defface outline-stars-level-8 '((t :inherit outline-8))
   "Face for level 8 headings." :group 'outline-stars-faces)
 
-;;; ** 1.3. Internal Variables
+;;; ** 1.3 Internal Variables
 
 (defvar-local outline-stars--font-lock-keywords nil
   "Buffer-local storage for font-lock keywords added by outline-stars.
@@ -150,7 +150,7 @@ Used for clean removal when the mode is deactivated.")
   "Current state of global visibility cycling.
 One of `show-all', `headings-only', or `top-level'.")
 
-;;; * 2. Comment Prefix
+;;; * 2 Comment Prefix
 
 (defun outline-stars--comment-prefix ()
   "Return the comment prefix for outshine-style headings.
@@ -173,9 +173,9 @@ conflicts with documentation comment syntax."
         (setq result (concat result cs)))
       result)))
 
-;;; * 3. Buffer Setup
+;;; * 3 Buffer Setup
 
-;;; ** 3.1. Activation
+;;; ** 3.1 Activation
 
 (defun outline-stars-setup ()
   "Set up outline-minor-mode with outshine-style star headings.
@@ -211,7 +211,7 @@ Intended to be called from `after-change-major-mode-hook' via
       ;; Fontification: per-level faces on heading text
       (outline-stars--add-font-lock qprefix))))
 
-;;; ** 3.2. Fontification
+;;; ** 3.2 Fontification
 
 (defun outline-stars--add-font-lock (qprefix)
   "Add font-lock keywords for star headings using QPREFIX.
@@ -230,7 +230,7 @@ prefix or stars."
     (when font-lock-mode
       (font-lock-flush))))
 
-;;; ** 3.3. Deactivation
+;;; ** 3.3 Deactivation
 
 (defun outline-stars-teardown ()
   "Remove font-lock keywords and deactivate outline-minor-mode."
@@ -242,7 +242,7 @@ prefix or stars."
   (when outline-minor-mode
     (outline-minor-mode -1)))
 
-;;; * 4. Global Minor Mode
+;;; * 4 Global Minor Mode
 
 (defun outline-stars--maybe-setup ()
   "Activate outline-stars if the current mode derives from a listed mode."
@@ -269,9 +269,9 @@ imenu support."
       (with-current-buffer buf
         (outline-stars--maybe-teardown)))))
 
-;;; * 5. Structure Editing
+;;; * 5 Structure Editing
 
-;;; ** 5.1. Narrowing
+;;; ** 5.1 Narrowing
 
 ;;;###autoload
 (defun outline-stars-narrow-to-subtree ()
@@ -283,7 +283,7 @@ imenu support."
     (outline-end-of-subtree)
     (narrow-to-region beg (point))))
 
-;;; ** 5.2. Insert Heading
+;;; ** 5.2 Insert Heading
 
 ;;;###autoload
 (defun outline-stars-insert-heading ()
@@ -301,7 +301,7 @@ imenu support."
     (newline)
     (insert prefix " " (make-string level ?*) " ")))
 
-;;; ** 5.3. Promote/Demote
+;;; ** 5.3 Promote/Demote
 
 ;;;###autoload
 (defun outline-stars-promote ()
@@ -343,7 +343,7 @@ headings are demoted as well."
           (re-search-forward "[*]+" (line-end-position))
           (replace-match (make-string (1+ level) ?*)))))))
 
-;;; ** 5.4. Subtree Promote/Demote
+;;; ** 5.4 Subtree Promote/Demote
 
 ;;;###autoload
 (defun outline-stars-promote-subtree ()
@@ -397,7 +397,7 @@ Refuses to demote if any heading in the subtree is at max level."
                 (replace-match (make-string (1+ cur-level) ?*))))
             (forward-line 1)))))))
 
-;;; * 6. Visibility Cycling
+;;; * 6 Visibility Cycling
 
 ;;;###autoload
 (defun outline-stars-cycle-buffer ()
@@ -420,7 +420,7 @@ requires point to be on a heading."
      (setq outline-stars--cycle-state 'show-all)
      (message "Show all"))))
 
-;;; * 7. Sorting
+;;; * 7 Sorting
 
 ;;;###autoload
 (defun outline-stars-sort-siblings (&optional reverse-p)
@@ -479,7 +479,7 @@ REVERSE-P, sort in reverse alphabetical order."
                   (goto-char (nth 1 orig))
                   (insert new-text))))))))))
 
-;;; * 8. Provide
+;;; * 8 Provide
 
 (provide 'outline-stars)
 ;;; outline-stars.el ends here

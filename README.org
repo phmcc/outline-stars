@@ -32,55 +32,55 @@ By default, headings use section-level comment prefixes (/e.g./, ~;;; *~ in elis
 
 Install directly from the online repository:
 
-#+begin_src emacs-lisp
+#+BEGIN_SRC emacs-lisp
 (use-package outline-stars
   :ensure (:host codeberg :repo "phmcc/outline-stars")
   :config (outline-stars-mode 1))
-#+end_src
+#+END_SRC
 
 ** With ~package-vc~
 
-#+begin_src emacs-lisp
+#+BEGIN_SRC emacs-lisp
 (use-package outline-stars
   :vc (outline-stars :url "https://codeberg.org/phmcc/outline-stars")
   :config (outline-stars-mode 1))
-#+end_src
+#+END_SRC
 
 ** Manual
 
 Clone the repository and add it to the load path:
 
-#+begin_src emacs-lisp
+#+BEGIN_SRC emacs-lisp
 (add-to-list 'load-path "~/path/to/outline-stars")
 (require 'outline-stars)
 (outline-stars-mode 1)
-#+end_src
+#+END_SRC
 
 * Quick Start
 
 ** 1. Enable the global minor mode
 
-#+begin_src emacs-lisp
+#+BEGIN_SRC emacs-lisp
 (outline-stars-mode 1)
-#+end_src
+#+END_SRC
 
 This activates star-based headings for all modes listed in ~outline-stars-modes~ (defaults to ~prog-mode~).
 
 ** 2. Add additional modes if needed
 
-#+begin_src emacs-lisp
+#+BEGIN_SRC emacs-lisp
 (setq outline-stars-modes '(prog-mode LaTeX-mode ledger-mode))
-#+end_src
+#+END_SRC
 
 ** 3. Use headings in your files
 
 Headings are comment lines followed by stars indicating depth:
 
-#+begin_example
+#+BEGIN_EXAMPLE
 ;;; * Top-level section
 ;;; ** Subsection
 ;;; *** Sub-subsection
-#+end_example
+#+END_EXAMPLE
 
 Standard ~outline-minor-mode~ keybindings work immediately: ~TAB~ on a heading to cycle visibility, ~C-c @ C-t~ to fold all, /etc./
 
@@ -95,15 +95,15 @@ By default, headings use section-level comments for modes with single-character 
 | Shell          | ~## *~    | ~## **~   | ~## ***~  |
 | C / C++ / Java | ~// *~    | ~// **~   | ~// ***~  |
 
-Multi-character comment starters like =//= are never extended, avoiding conflicts with Doxygen and similar documentation comment syntax.
+Multi-character comment starters like ~//~ are never extended, avoiding conflicts with Doxygen and similar documentation comment syntax.
 
 ** Classic outshine convention
 
-Set ~outline-stars-section-comments~ to nil for the original outshine convention:
+Set ~outline-stars-section-comments~ to nil for the original ~outshine~ convention:
 
-#+begin_src emacs-lisp
+#+BEGIN_SRC emacs-lisp
 (setq outline-stars-section-comments nil)
-#+end_src
+#+END_SRC
 
 | Mode           | Level 1 | Level 2 | Level 3 |
 |----------------+---------+---------+---------|
