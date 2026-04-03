@@ -19,10 +19,13 @@ By default, headings use section-level comment prefixes (/e.g./, ~;;; *~ in elis
 - *Comment-aware heading detection* — derives the heading prefix from ~comment-start~ and ~comment-add~; works across elisp, R, Python, shell, C, and any other mode with a comment convention
 - *Section-level comments by default* — uses ~;;; *~ / ~### *~ for single-character comment starters, improving interoperability with vanilla Emacs; configurable via ~outline-stars-section-comments~
 - *Per-level fontification* — applies ~outline-stars-level-N~ faces to heading text only, leaving the comment prefix and stars in their original face
+- *Optional top-level overline* — adds an overline to level-1 headings for visual section breaks, via ~outline-stars-level-1-overline~
+- *Automatic TAB cycling* — enables ~outline-minor-mode-cycle~ so =TAB= on a heading cycles visibility with no manual configuration
 - *Imenu integration* — exposes star headings as navigable ~imenu~ entries alongside any existing mode entries
 - *Star-aware promote/demote* — single-heading and whole-subtree variants, with configurable default behavior via ~outline-stars-promote-subtree-p~
 - *Global visibility cycling* — cycles through show all, headings only, and top-level from any point in the buffer
 - *Sibling sorting* — alphabetically sort headings at the same level, carrying their subtrees
+- *Section numbering* — insert or update hierarchical section numbers (1, 1.1, 1.1.2) across all headings, with a separate command to strip them
 
 * Installation
 
@@ -124,6 +127,8 @@ Set ~outline-stars-section-comments~ to nil for the original ~outshine~ conventi
 | ~outline-stars-narrow-to-subtree~ | Narrow buffer to the current subtree                 |
 | ~outline-stars-cycle-buffer~      | Cycle visibility: all → headings → top-level → all   |
 | ~outline-stars-sort-siblings~     | Alphabetically sort sibling headings with subtrees   |
+| ~outline-stars-number-headings~   | Insert or update section numbers (1, 1.1, 1.1.2)     |
+| ~outline-stars-strip-numbers~     | Remove section numbers from all headings             |
 
 All standard ~outline-minor-mode~ commands (~outline-cycle~, ~outline-hide-sublevels~, ~outline-move-subtree-up~, /etc./) work as expected with star headings.
 
@@ -147,15 +152,16 @@ To customize per-mode:
 | ~outline-stars-modes~             | ~(prog-mode)~ | Parent modes where stars activate                   |
 | ~outline-stars-max-level~         | ~8~           | Maximum heading depth                               |
 | ~outline-stars-promote-subtree-p~ | ~t~           | Whether promote/demote operates on the full subtree |
-| ~outline-stars-section-comments~  | ~t~           | Use section-level comments (=;;;=, =###=) as prefix     |
+| ~outline-stars-section-comments~  | ~t~           | Use section-level comments (~;;;~, ~###~) as prefix     |
+| ~outline-stars-level-1-overline~  | ~nil~         | Add an overline to top-level headings               |
 
 * Technical Details
 
 ** File structure
 
-| File              | Description                                                   |
-|-------------------+---------------------------------------------------------------|
-| ~outline-stars.el~  | Core: heading detection, fontification, structure editing, global mode |
+| File             | Description                                                            |
+|------------------+------------------------------------------------------------------------|
+| ~outline-stars.el~ | Core: heading detection, fontification, structure editing, global mode |
 
 ** Requirements
 
@@ -167,6 +173,8 @@ To customize per-mode:
 ~outline-stars~ runs on ~after-change-major-mode-hook~ rather than individual mode hooks.  This ensures its ~outline-regexp~ overrides any mode-specific defaults—notably ESS, which sets ~outline-regexp~ to an unmatchable pattern on its own hooks.
 
 On Emacs 29+, several major modes set ~outline-search-function~, which outline commands check /before/ ~outline-regexp~.  When non-nil, ~outline-regexp~ is silently ignored regardless of its value.  ~outline-stars~ nullifies this variable buffer-locally so that its custom regexp is consulted.
+
+Heading level resolution uses a pre-seeded ~outline-heading-alist~ for fast lookup.  Rather than running a regexp match and counting stars on every ~outline-level~ call, the alist maps each heading string directly to its level number, with a fallback to star counting for robustness.
 
 * Contributing
 

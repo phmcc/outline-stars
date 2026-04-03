@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Paul Hsin-ti McClelland
 
 ;; Author: Paul Hsin-ti McClelland <PaulHMcClelland@protonmail.com>
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://codeberg.org/phmcc/outline-stars
 ;; Keywords: outlines, convenience
@@ -33,10 +33,13 @@
 ;; Features:
 ;;   - Comment-aware heading detection using `comment-start' and `comment-add'
 ;;   - Per-level fontification via `outline-stars-level-N' faces
+;;   - Optional overline on top-level headings for visual section breaks
 ;;   - `imenu' integration for heading navigation
 ;;   - Subtree promote/demote that optionally updates all child headings
 ;;   - Global visibility cycling (all → headings → top-level → all)
 ;;   - Alphabetical sorting of sibling headings
+;;   - Section numbering (1, 1.1, 1.1.2, ...) with insert and strip commands
+;;   - Automatic TAB cycling on headings via `outline-minor-mode-cycle'
 ;;   - Nullifies `outline-search-function' (Emacs 29+) so custom regexps work
 ;;   - Runs on `after-change-major-mode-hook' to override mode-specific defaults
 ;;
@@ -116,6 +119,14 @@ When nil, headings use the classic outshine convention:
   :type 'boolean
   :group 'outline-stars)
 
+(defcustom outline-stars-level-1-overline nil
+  "Whether to add an overline to top-level heading text.
+When non-nil, `outline-stars-level-1' headings are fontified with
+an overline, creating a visual section break.  The overline color
+is inherited from the heading face foreground."
+  :type 'boolean
+  :group 'outline-stars)
+
 ;;; ** 1.2 Faces
 
 (defgroup outline-stars-faces nil
@@ -175,13 +186,37 @@ conflicts with documentation comment syntax."
 
 ;;; * 3 Buffer Setup
 
-;;; ** 3.1 Activation
+;;; ** 3.1 Heading Alist
+
+(defun outline-stars--build-heading-alist (prefix)
+  "Build `outline-heading-alist' entries for PREFIX.
+Pre-seeds the alist with all heading strings up to
+`outline-stars-max-level', mapping each to its level number.
+This allows `outline-level' to use a fast alist lookup
+instead of regexp matching on every call."
+  (let (alist)
+    (cl-loop for level from outline-stars-max-level downto 1
+             do (push (cons (concat prefix " " (make-string level ?*) " ")
+                            level)
+                      alist))
+    alist))
+
+(defun outline-stars--level ()
+  "Return the heading level for the current match.
+Uses `outline-heading-alist' for fast lookup, falling back to
+star counting if the matched string is not in the alist."
+  (or (cdr (assoc (match-string 0) outline-heading-alist))
+      (length (replace-regexp-in-string
+               "[^*]" ""
+               (match-string-no-properties 0)))))
+
+;;; ** 3.2 Activation
 
 (defun outline-stars-setup ()
   "Set up outline-minor-mode with outshine-style star headings.
-Configures `outline-regexp', `outline-level', fontification, and imenu.
-Intended to be called from `after-change-major-mode-hook' via
-`outline-stars-mode'."
+Configures `outline-regexp', `outline-level', heading alist,
+fontification, imenu, and TAB cycling.  Intended to be called
+from `after-change-major-mode-hook' via `outline-stars-mode'."
   (when-let* ((prefix (outline-stars--comment-prefix)))
     (let* ((qprefix (regexp-quote prefix))
            (star-re (format "[*]\\{1,%d\\}" outline-stars-max-level))
@@ -192,45 +227,46 @@ Intended to be called from `after-change-major-mode-hook' via
       ;; precedence over outline-regexp and silently breaks custom regexps.
       (setq-local outline-search-function nil)
       (setq-local outline-regexp out-regexp)
-      (setq-local outline-level
-                  (lambda ()
-                    (save-excursion
-                      (save-match-data
-                        (beginning-of-line)
-                        (looking-at outline-regexp)
-                        (let ((stars (replace-regexp-in-string
-                                      "[^*]" ""
-                                      (match-string-no-properties 0))))
-                          (length stars))))))
-      ;; Imenu: expose headings as navigable entries
+      ;; Pre-seed the heading alist for fast level lookup.
+      (setq-local outline-heading-alist
+                  (outline-stars--build-heading-alist prefix))
+      (setq-local outline-level #'outline-stars--level)
+      ;; Enable TAB cycling on headings.
+      (setq-local outline-minor-mode-cycle t)
+      ;; Imenu: expose headings as navigable entries.
       (let ((heading-entry
              `("Headings" ,(concat "^" qprefix " " star-re " \\(.*\\)$") 1)))
         (if imenu-generic-expression
             (add-to-list 'imenu-generic-expression heading-entry)
           (setq-local imenu-generic-expression (list heading-entry))))
-      ;; Fontification: per-level faces on heading text
+      ;; Fontification: per-level faces on heading text.
       (outline-stars--add-font-lock qprefix))))
 
-;;; ** 3.2 Fontification
+;;; ** 3.3 Fontification
 
 (defun outline-stars--add-font-lock (qprefix)
   "Add font-lock keywords for star headings using QPREFIX.
 Faces apply to the heading text only (group 1), not the comment
-prefix or stars."
+prefix or stars.  When `outline-stars-level-1-overline' is non-nil,
+level 1 headings receive an overline for visual section breaks."
   (let ((keywords
          (cl-loop for level from 1 to outline-stars-max-level
                   for face = (intern (format "outline-stars-level-%d" level))
+                  for face-spec = (if (and (= level 1)
+                                           outline-stars-level-1-overline)
+                                      `(:inherit ,face :overline t)
+                                    face)
                   collect
                   `(,(format "^%s %s \\(.*\\)"
                              qprefix
                              (format "[*]\\{%d\\}" level))
-                    (1 ',face t)))))
+                    (1 ',face-spec t)))))
     (setq outline-stars--font-lock-keywords keywords)
     (font-lock-add-keywords nil keywords)
     (when font-lock-mode
       (font-lock-flush))))
 
-;;; ** 3.3 Deactivation
+;;; ** 3.4 Deactivation
 
 (defun outline-stars-teardown ()
   "Remove font-lock keywords and deactivate outline-minor-mode."
@@ -479,7 +515,69 @@ REVERSE-P, sort in reverse alphabetical order."
                   (goto-char (nth 1 orig))
                   (insert new-text))))))))))
 
-;;; * 8 Provide
+;;; * 8 Section Numbering
+
+(defconst outline-stars--number-regexp
+  "\\([0-9]+\\(?:\\.[0-9]+\\)*\\) "
+  "Regexp matching a section number followed by a space.
+Used by `outline-stars-number-headings' and `outline-stars-strip-numbers'
+to identify existing numbers in heading text.")
+
+;;;###autoload
+(defun outline-stars-number-headings ()
+  "Insert or update hierarchical section numbers on all headings.
+Numbers are placed between the stars and the heading text, using
+dotted notation (1, 1.1, 1.1.2, etc.).  Existing numbers are
+stripped before re-numbering, making the command idempotent.
+
+Example result:
+  ;;; * 1 Foundation
+  ;;; ** 1.1 Customization
+  ;;; ** 1.2 Faces
+  ;;; * 2 Buffer Setup
+  ;;; ** 2.1 Activation"
+  (interactive)
+  (outline-stars-strip-numbers)
+  (save-excursion
+    (goto-char (point-min))
+    (let ((counters (make-vector (1+ outline-stars-max-level) 0)))
+      (while (not (eobp))
+        (when (and (outline-on-heading-p t)
+                   (looking-at outline-regexp))
+          (let* ((level (funcall outline-level))
+                 (match-end-pos (match-end 0)))
+            ;; Increment counter at this level, reset all deeper levels.
+            (aset counters level (1+ (aref counters level)))
+            (cl-loop for i from (1+ level) to outline-stars-max-level
+                     do (aset counters i 0))
+            ;; Build the number string: "1.2.3 "
+            (let ((number-str
+                   (concat
+                    (mapconcat (lambda (i) (number-to-string (aref counters i)))
+                               (number-sequence 1 level)
+                               ".")
+                    " ")))
+              (goto-char match-end-pos)
+              (insert number-str))))
+        (forward-line 1)))))
+
+;;;###autoload
+(defun outline-stars-strip-numbers ()
+  "Remove section numbers from all headings.
+Strips any dotted number prefix (e.g., \"1.2.3 \") that appears
+immediately after the stars in each heading line."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (when (and (outline-on-heading-p t)
+                 (looking-at outline-regexp))
+        (goto-char (match-end 0))
+        (when (looking-at outline-stars--number-regexp)
+          (delete-region (match-beginning 0) (match-end 0))))
+      (forward-line 1))))
+
+;;; * 9 Provide
 
 (provide 'outline-stars)
 ;;; outline-stars.el ends here

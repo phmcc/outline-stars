@@ -4,6 +4,14 @@
 
 All notable changes to ~outline-stars~ are documented in this file.
 
+* 0.3.0 (2026-04-03)
+
+- Pre-seeded ~outline-heading-alist~ for fast level lookup: heading level is now resolved via alist lookup instead of regexp matching on every call, improving navigation performance in large files
+- New customization ~outline-stars-level-1-overline~ (default ~nil~): when non-nil, top-level headings are fontified with an overline, creating a visual section break
+- New command ~outline-stars-number-headings~: inserts or updates hierarchical section numbers (1, 1.1, 1.1.2) between the stars and heading text; idempotent (strips existing numbers before re-numbering)
+- New command ~outline-stars-strip-numbers~: removes section numbers from all headings
+- ~outline-stars-setup~ now sets ~outline-minor-mode-cycle~ buffer-locally, enabling TAB cycling on headings without requiring manual configuration
+
 * 0.2.0 (2026-03-31)
 
 - New customization ~outline-stars-section-comments~ (default ~t~): uses section-level comment prefixes (=;;; *=, =### *=) for modes with single-character comment starters; multi-character starters like =//= are unaffected, avoiding Doxygen conflicts; set to nil for classic ~outshine~ behavior (=;; *=, =## *=)
