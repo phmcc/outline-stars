@@ -36,9 +36,10 @@
 ;;   - Optional overline on top-level headings for visual section breaks
 ;;   - `imenu' integration for heading navigation
 ;;   - Subtree promote/demote that optionally updates all child headings
-;;   - Global visibility cycling (all → headings → top-level → all)
+;;   - Global visibility cycling (folded → content → show-all)
+;;   - Startup visibility state (folded, content, show-all) per-buffer or per-mode
 ;;   - Alphabetical sorting of sibling headings
-;;   - Section numbering (1, 1.1, 1.1.2, ...) with insert and strip commands
+;;   - Section numbering (0, 0.1, ... or 1, 1.1, ...) with insert/strip
 ;;   - Automatic TAB cycling on headings via `outline-minor-mode-cycle'
 ;;   - Nullifies `outline-search-function' (Emacs 29+) so custom regexps work
 ;;   - Runs on `after-change-major-mode-hook' to override mode-specific defaults
@@ -50,15 +51,6 @@
 ;; Or with use-package:
 ;;   (use-package outline-stars
 ;;     :config (outline-stars-mode 1))
-;;
-;; By default, headings use the section-comment convention where
-;; available, adding one extra comment character for single-character
-;; comment starters.  This produces headings that degrade gracefully
-;; in vanilla Emacs:
-;;   ;;; * Top level       (elisp)
-;;   ### * Top level       (R/Python)
-;;   ## * Top level        (shell)
-;;   // * Top level        (C/C++ — unchanged, avoids Doxygen conflict)
 ;;
 ;; Set `outline-stars-section-comments' to nil for classic outshine
 ;; behavior (;; *, ## *, # *, // *).
@@ -85,46 +77,71 @@
   :group 'outline-stars)
 
 (defcustom outline-stars-modes '(prog-mode)
-  "List of major modes (or parent modes) where outline-stars should activate.
-Each entry is checked with `derived-mode-p', so specifying `prog-mode'
-covers all programming modes."
+  "Major modes where outline-stars should activate.
+Checked with `derived-mode-p', so `prog-mode' covers all
+programming modes."
   :type '(repeat symbol)
   :group 'outline-stars)
 
 (defcustom outline-stars-promote-subtree-p t
-  "Whether promote/demote commands operate on the entire subtree.
-When non-nil (the default), `outline-stars-promote' and
-`outline-stars-demote' adjust all child headings along with
-the current heading.  When nil, only the current heading is changed."
+  "Whether promote/demote operates on the entire subtree.
+When nil, only the current heading is changed."
   :type 'boolean
   :group 'outline-stars)
 
 (defcustom outline-stars-section-comments t
   "Whether to use section-level comments for heading prefixes.
-When non-nil (the default), one extra comment character is added
-for modes with single-character comment starters, producing headings
-that follow the section-comment convention:
-  elisp: ;;; *   R: ### *   shell: ## *
-
-This is useful because ;;; headings degrade gracefully in vanilla
-Emacs (which recognizes ;;; as a section heading), and ### is a
-semi-established section convention in R and Python.
-
-Modes with multi-character comment starters (// in C, C++, Java)
-are unaffected regardless of this setting, avoiding conflicts with
-documentation comment syntax like Doxygen.
-
-When nil, headings use the classic outshine convention:
-  elisp: ;; *    R: ## *    shell: # *"
+When non-nil, one extra comment character is added for modes with
+single-character comment starters (;; → ;;;, ## → ###).  Modes
+with multi-character starters (// in C) are unaffected.
+When nil, uses the classic outshine convention (;; *, ## *, # *)."
   :type 'boolean
   :group 'outline-stars)
 
 (defcustom outline-stars-level-1-overline nil
-  "Whether to add an overline to top-level heading text.
-When non-nil, `outline-stars-level-1' headings are fontified with
-an overline, creating a visual section break.  The overline color
-is inherited from the heading face foreground."
+  "Whether to add an overline to top-level heading lines.
+The overline color is taken from the `outline-stars-level-1'
+foreground at setup time.  If you change themes, re-evaluate
+`outline-stars-setup' in affected buffers to update the color."
   :type 'boolean
+  :group 'outline-stars)
+
+(defcustom outline-stars-default-state nil
+  "Initial visibility state when outline-stars activates in a buffer.
+When nil (the default), the buffer is left as-is.  Other values:
+  `folded'   — show only top-level headings
+  `content'  — show all headings, hide body text
+  `show-all' — show everything (headings and body)
+
+This can be overridden per-mode via `outline-stars-default-state-alist',
+or per-file via file-local variables."
+  :type '(choice (const :tag "No action" nil)
+                 (const :tag "Folded (top-level only)" folded)
+                 (const :tag "Content (all headings)" content)
+                 (const :tag "Show all" show-all))
+  :group 'outline-stars)
+;;;###autoload(put 'outline-stars-default-state 'safe-local-variable
+;;;###autoload  (lambda (v) (memq v '(nil folded content show-all))))
+
+(defcustom outline-stars-default-state-alist nil
+  "Per-mode overrides for `outline-stars-default-state'.
+An alist of (MODE . STATE) pairs.  MODE is checked with
+`derived-mode-p'.  The first match wins.
+
+Example:
+  \\='((emacs-lisp-mode . content)
+    (ess-r-mode . folded))"
+  :type '(alist :key-type symbol :value-type
+                (choice (const nil) (const folded)
+                        (const content) (const show-all)))
+  :group 'outline-stars)
+
+(defcustom outline-stars-number-start 1
+  "Starting number for section numbering.
+Set to 0 for zero-based numbering (0, 0.1, 0.2, ...),
+or 1 for one-based numbering (1, 1.1, 1.2, ...)."
+  :type '(choice (const :tag "Zero-based (0, 0.1, ...)" 0)
+                 (const :tag "One-based (1, 1.1, ...)" 1))
   :group 'outline-stars)
 
 ;;; ** 1.2 Faces
@@ -154,23 +171,22 @@ is inherited from the heading face foreground."
 ;;; ** 1.3 Internal Variables
 
 (defvar-local outline-stars--font-lock-keywords nil
-  "Buffer-local storage for font-lock keywords added by outline-stars.
-Used for clean removal when the mode is deactivated.")
+  "Font-lock keywords added by outline-stars in this buffer.")
 
 (defvar-local outline-stars--cycle-state 'show-all
   "Current state of global visibility cycling.
-One of `show-all', `headings-only', or `top-level'.")
+One of `show-all', `content', or `folded'.")
+
+(defvar-local outline-stars--active nil
+  "Non-nil if outline-stars is active in this buffer.")
 
 ;;; * 2 Comment Prefix
 
 (defun outline-stars--comment-prefix ()
-  "Return the comment prefix for outshine-style headings.
-Derives the base prefix from `comment-start' and `comment-add'.
-When `outline-stars-section-comments' is non-nil and the base
-comment character is a single character, one extra character is
-appended to produce section-level comments.  Multi-character
-comment starters (like //) are never extended, avoiding
-conflicts with documentation comment syntax."
+  "Return the comment prefix for star headings.
+Derives from `comment-start' and `comment-add'.  When
+`outline-stars-section-comments' is non-nil and `comment-start'
+is a single character, one extra character is appended."
   (when comment-start
     (let* ((cs (string-trim comment-start))
            (result (if (or (not comment-add) (zerop comment-add))
@@ -189,11 +205,8 @@ conflicts with documentation comment syntax."
 ;;; ** 3.1 Heading Alist
 
 (defun outline-stars--build-heading-alist (prefix)
-  "Build `outline-heading-alist' entries for PREFIX.
-Pre-seeds the alist with all heading strings up to
-`outline-stars-max-level', mapping each to its level number.
-This allows `outline-level' to use a fast alist lookup
-instead of regexp matching on every call."
+  "Build `outline-heading-alist' for PREFIX.
+Pre-seeds heading-string-to-level mappings for fast lookup."
   (let (alist)
     (cl-loop for level from outline-stars-max-level downto 1
              do (push (cons (concat prefix " " (make-string level ?*) " ")
@@ -203,8 +216,7 @@ instead of regexp matching on every call."
 
 (defun outline-stars--level ()
   "Return the heading level for the current match.
-Uses `outline-heading-alist' for fast lookup, falling back to
-star counting if the matched string is not in the alist."
+Uses `outline-heading-alist' for fast lookup, with fallback."
   (or (cdr (assoc (match-string 0) outline-heading-alist))
       (length (replace-regexp-in-string
                "[^*]" ""
@@ -213,60 +225,88 @@ star counting if the matched string is not in the alist."
 ;;; ** 3.2 Activation
 
 (defun outline-stars-setup ()
-  "Set up outline-minor-mode with outshine-style star headings.
-Configures `outline-regexp', `outline-level', heading alist,
-fontification, imenu, and TAB cycling.  Intended to be called
-from `after-change-major-mode-hook' via `outline-stars-mode'."
+  "Set up outline-minor-mode with star headings in the current buffer."
   (when-let* ((prefix (outline-stars--comment-prefix)))
     (let* ((qprefix (regexp-quote prefix))
            (star-re (format "[*]\\{1,%d\\}" outline-stars-max-level))
            (out-regexp (concat qprefix " " star-re " ")))
       ;; Activate first so our settings override the mode's defaults.
       (outline-minor-mode 1)
-      ;; Emacs 29+ modes can set outline-search-function, which takes
-      ;; precedence over outline-regexp and silently breaks custom regexps.
+      ;; Emacs 29+: nullify outline-search-function so outline-regexp is used.
       (setq-local outline-search-function nil)
       (setq-local outline-regexp out-regexp)
-      ;; Pre-seed the heading alist for fast level lookup.
       (setq-local outline-heading-alist
                   (outline-stars--build-heading-alist prefix))
       (setq-local outline-level #'outline-stars--level)
-      ;; Enable TAB cycling on headings.
       (setq-local outline-minor-mode-cycle t)
-      ;; Imenu: expose headings as navigable entries.
+      (setq-local outline-stars--active t)
+      ;; Imenu
       (let ((heading-entry
              `("Headings" ,(concat "^" qprefix " " star-re " \\(.*\\)$") 1)))
         (if imenu-generic-expression
             (add-to-list 'imenu-generic-expression heading-entry)
           (setq-local imenu-generic-expression (list heading-entry))))
-      ;; Fontification: per-level faces on heading text.
-      (outline-stars--add-font-lock qprefix))))
+      ;; Fontification
+      (outline-stars--add-font-lock qprefix)
+      ;; Default visibility: apply immediately from alist/global, then
+      ;; register on hack-local-variables-hook so file-local overrides
+      ;; can re-apply.  The hook only fires for file-visiting buffers.
+      (outline-stars--apply-default-state)
+      (add-hook 'hack-local-variables-hook
+                #'outline-stars--apply-default-state nil t))))
 
 ;;; ** 3.3 Fontification
 
 (defun outline-stars--add-font-lock (qprefix)
   "Add font-lock keywords for star headings using QPREFIX.
-Faces apply to the heading text only (group 1), not the comment
-prefix or stars.  When `outline-stars-level-1-overline' is non-nil,
-level 1 headings receive an overline for visual section breaks."
+Faces apply to heading text only (group 1).  When
+`outline-stars-level-1-overline' is non-nil, a uniform-color
+overline spans the entire heading line (group 0)."
   (let ((keywords
          (cl-loop for level from 1 to outline-stars-max-level
                   for face = (intern (format "outline-stars-level-%d" level))
-                  for face-spec = (if (and (= level 1)
-                                           outline-stars-level-1-overline)
-                                      `(:inherit ,face :overline t)
-                                    face)
-                  collect
-                  `(,(format "^%s %s \\(.*\\)"
-                             qprefix
-                             (format "[*]\\{%d\\}" level))
-                    (1 ',face-spec t)))))
+                  for re = (format "^%s %s \\(.*\\)"
+                                   qprefix
+                                   (format "[*]\\{%d\\}" level))
+                  collect `(,re (1 ',face t))
+                  when (and (= level 1) outline-stars-level-1-overline)
+                  collect `(,re (0 '(:overline ,(face-foreground
+                                                 'outline-stars-level-1
+                                                 nil t))
+                                append)))))
     (setq outline-stars--font-lock-keywords keywords)
     (font-lock-add-keywords nil keywords)
     (when font-lock-mode
       (font-lock-flush))))
 
-;;; ** 3.4 Deactivation
+;;; ** 3.4 Default Visibility State
+
+(defun outline-stars--resolve-default-state ()
+  "Return the effective default state for the current buffer.
+File-local values take highest priority, then per-mode alist,
+then the global `outline-stars-default-state'."
+  (if (local-variable-p 'outline-stars-default-state)
+      outline-stars-default-state
+    (or (cl-loop for (mode . state) in outline-stars-default-state-alist
+                 when (derived-mode-p mode) return state)
+        outline-stars-default-state)))
+
+(defun outline-stars--apply-default-state ()
+  "Apply the resolved default visibility state to the current buffer.
+Called once at setup time, and again from `hack-local-variables-hook'
+if the buffer is visiting a file (allowing file-local overrides)."
+  (when outline-stars--active
+    (pcase (outline-stars--resolve-default-state)
+      ('folded
+       (outline-hide-sublevels 1))
+      ('content
+       (outline-show-all)
+       (outline-hide-region-body (point-min) (point-max)))
+      ('show-all
+       (outline-show-all))
+      (_ nil))))
+
+;;; ** 3.5 Deactivation
 
 (defun outline-stars-teardown ()
   "Remove font-lock keywords and deactivate outline-minor-mode."
@@ -275,27 +315,27 @@ level 1 headings receive an overline for visual section breaks."
     (setq outline-stars--font-lock-keywords nil)
     (when font-lock-mode
       (font-lock-flush)))
+  (setq outline-stars--active nil)
+  (remove-hook 'hack-local-variables-hook
+               #'outline-stars--apply-default-state t)
   (when outline-minor-mode
     (outline-minor-mode -1)))
 
 ;;; * 4 Global Minor Mode
 
 (defun outline-stars--maybe-setup ()
-  "Activate outline-stars if the current mode derives from a listed mode."
+  "Activate outline-stars if the current mode is in `outline-stars-modes'."
   (when (apply #'derived-mode-p outline-stars-modes)
     (outline-stars-setup)))
 
 (defun outline-stars--maybe-teardown ()
-  "Deactivate outline-stars in buffers where it was set up."
+  "Deactivate outline-stars if it was set up in this buffer."
   (when outline-stars--font-lock-keywords
     (outline-stars-teardown)))
 
 ;;;###autoload
 (define-minor-mode outline-stars-mode
-  "Global minor mode for outshine-style star headings via outline-minor-mode.
-When enabled, buffers in modes listed in `outline-stars-modes' will
-automatically get star-based heading detection, fontification, and
-imenu support."
+  "Global minor mode for outshine-style star headings."
   :global t
   :group 'outline-stars
   (if outline-stars-mode
@@ -323,7 +363,7 @@ imenu support."
 
 ;;;###autoload
 (defun outline-stars-insert-heading ()
-  "Insert a new heading at the current level using outshine-style stars."
+  "Insert a new heading at the current level after the current line."
   (interactive)
   (let* ((prefix (outline-stars--comment-prefix))
          (level (save-excursion
@@ -341,9 +381,7 @@ imenu support."
 
 ;;;###autoload
 (defun outline-stars-promote ()
-  "Promote the current heading by removing one star.
-When `outline-stars-promote-subtree-p' is non-nil, all child
-headings are promoted as well."
+  "Promote heading (or subtree if `outline-stars-promote-subtree-p')."
   (interactive)
   (if outline-stars-promote-subtree-p
       (outline-stars-promote-subtree)
@@ -351,9 +389,7 @@ headings are promoted as well."
 
 ;;;###autoload
 (defun outline-stars-demote ()
-  "Demote the current heading by adding one star.
-When `outline-stars-promote-subtree-p' is non-nil, all child
-headings are demoted as well."
+  "Demote heading (or subtree if `outline-stars-promote-subtree-p')."
   (interactive)
   (if outline-stars-promote-subtree-p
       (outline-stars-demote-subtree)
@@ -383,8 +419,7 @@ headings are demoted as well."
 
 ;;;###autoload
 (defun outline-stars-promote-subtree ()
-  "Promote the current heading and all its children by one level.
-Refuses to promote if the top heading is already at level 1."
+  "Promote the current heading and all children by one level."
   (interactive)
   (save-excursion
     (outline-back-to-heading t)
@@ -405,8 +440,7 @@ Refuses to promote if the top heading is already at level 1."
 
 ;;;###autoload
 (defun outline-stars-demote-subtree ()
-  "Demote the current heading and all its children by one level.
-Refuses to demote if any heading in the subtree is at max level."
+  "Demote the current heading and all children by one level."
   (interactive)
   (save-excursion
     (outline-back-to-heading t)
@@ -437,21 +471,21 @@ Refuses to demote if any heading in the subtree is at max level."
 
 ;;;###autoload
 (defun outline-stars-cycle-buffer ()
-  "Cycle global visibility: show all -> headings only -> top level -> show all.
-Works from any point in the buffer, unlike `outline-cycle-buffer' which
-requires point to be on a heading."
+  "Cycle global visibility: folded → content → show all → folded.
+Folded shows only top-level headings.  Content shows all headings
+with body text hidden.  Show all reveals everything."
   (interactive)
   (pcase outline-stars--cycle-state
     ('show-all
+     (outline-hide-sublevels 1)
+     (setq outline-stars--cycle-state 'folded)
+     (message "Folded"))
+    ('folded
      (outline-show-all)
      (outline-hide-region-body (point-min) (point-max))
-     (setq outline-stars--cycle-state 'headings-only)
-     (message "Headings only"))
-    ('headings-only
-     (outline-hide-sublevels 1)
-     (setq outline-stars--cycle-state 'top-level)
-     (message "Top-level headings"))
-    ('top-level
+     (setq outline-stars--cycle-state 'content)
+     (message "Content"))
+    ('content
      (outline-show-all)
      (setq outline-stars--cycle-state 'show-all)
      (message "Show all"))))
@@ -461,8 +495,7 @@ requires point to be on a heading."
 ;;;###autoload
 (defun outline-stars-sort-siblings (&optional reverse-p)
   "Sort sibling headings alphabetically under the current parent.
-Each heading is moved with its entire subtree.  With prefix argument
-REVERSE-P, sort in reverse alphabetical order."
+With prefix argument REVERSE-P, sort in reverse order."
   (interactive "P")
   (save-excursion
     (condition-case nil
@@ -473,7 +506,6 @@ REVERSE-P, sort in reverse alphabetical order."
                            0))
            (child-level (1+ parent-level))
            siblings)
-      ;; Collect siblings: (heading-text start-pos end-pos)
       (save-excursion
         (when (outline-on-heading-p t)
           (outline-end-of-heading))
@@ -502,9 +534,7 @@ REVERSE-P, sort in reverse alphabetical order."
                (sorted-texts (mapcar (lambda (s)
                                        (buffer-substring (nth 1 s) (nth 2 s)))
                                      sorted)))
-          ;; Only rearrange if the order actually changed
           (unless (equal (mapcar #'car siblings) (mapcar #'car sorted))
-            ;; Replace from last to first to preserve positions
             (let ((pairs (cl-mapcar #'cons
                                     (reverse siblings)
                                     (reverse sorted-texts))))
@@ -519,38 +549,27 @@ REVERSE-P, sort in reverse alphabetical order."
 
 (defconst outline-stars--number-regexp
   "\\([0-9]+\\(?:\\.[0-9]+\\)*\\) "
-  "Regexp matching a section number followed by a space.
-Used by `outline-stars-number-headings' and `outline-stars-strip-numbers'
-to identify existing numbers in heading text.")
+  "Regexp matching a section number followed by a space.")
 
 ;;;###autoload
 (defun outline-stars-number-headings ()
   "Insert or update hierarchical section numbers on all headings.
-Numbers are placed between the stars and the heading text, using
-dotted notation (1, 1.1, 1.1.2, etc.).  Existing numbers are
-stripped before re-numbering, making the command idempotent.
-
-Example result:
-  ;;; * 1 Foundation
-  ;;; ** 1.1 Customization
-  ;;; ** 1.2 Faces
-  ;;; * 2 Buffer Setup
-  ;;; ** 2.1 Activation"
+Idempotent: strips existing numbers first.  Starting number is
+controlled by `outline-stars-number-start'."
   (interactive)
   (outline-stars-strip-numbers)
   (save-excursion
     (goto-char (point-min))
-    (let ((counters (make-vector (1+ outline-stars-max-level) 0)))
+    (let ((counters (make-vector (1+ outline-stars-max-level)
+                                 (1- outline-stars-number-start))))
       (while (not (eobp))
         (when (and (outline-on-heading-p t)
                    (looking-at outline-regexp))
           (let* ((level (funcall outline-level))
                  (match-end-pos (match-end 0)))
-            ;; Increment counter at this level, reset all deeper levels.
             (aset counters level (1+ (aref counters level)))
             (cl-loop for i from (1+ level) to outline-stars-max-level
-                     do (aset counters i 0))
-            ;; Build the number string: "1.2.3 "
+                     do (aset counters i (1- outline-stars-number-start)))
             (let ((number-str
                    (concat
                     (mapconcat (lambda (i) (number-to-string (aref counters i)))
@@ -563,9 +582,7 @@ Example result:
 
 ;;;###autoload
 (defun outline-stars-strip-numbers ()
-  "Remove section numbers from all headings.
-Strips any dotted number prefix (e.g., \"1.2.3 \") that appears
-immediately after the stars in each heading line."
+  "Remove section numbers from all headings."
   (interactive)
   (save-excursion
     (goto-char (point-min))

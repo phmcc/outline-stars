@@ -16,16 +16,18 @@ By default, headings use section-level comment prefixes (/e.g./, ~;;; *~ in elis
 
 * Features
 
+~outline-stars~ extends Emacs's built-in ~outline-mode~ with additional functionality.  Enhancements include:
+
 - *Comment-aware heading detection* — derives the heading prefix from ~comment-start~ and ~comment-add~; works across elisp, R, Python, shell, C, and any other mode with a comment convention
-- *Section-level comments by default* — uses ~;;; *~ / ~### *~ for single-character comment starters, improving interoperability with vanilla Emacs; configurable via ~outline-stars-section-comments~
 - *Per-level fontification* — applies ~outline-stars-level-N~ faces to heading text only, leaving the comment prefix and stars in their original face
 - *Optional top-level overline* — adds an overline to level-1 headings for visual section breaks, via ~outline-stars-level-1-overline~
 - *Automatic TAB cycling* — enables ~outline-minor-mode-cycle~ so =TAB= on a heading cycles visibility with no manual configuration
+- *Startup visibility state* — configurable initial folding via ~outline-stars-default-state~: ~folded~ (top-level only), ~content~ (all headings, body hidden), or ~show-all~; overridable per-mode via ~outline-stars-default-state-alist~ or per-file via file-local variables
 - *Imenu integration* — exposes star headings as navigable ~imenu~ entries alongside any existing mode entries
 - *Star-aware promote/demote* — single-heading and whole-subtree variants, with configurable default behavior via ~outline-stars-promote-subtree-p~
-- *Global visibility cycling* — cycles through show all, headings only, and top-level from any point in the buffer
+- *Global visibility cycling* — cycles through folded, content, and show all from any point in the buffer
 - *Sibling sorting* — alphabetically sort headings at the same level, carrying their subtrees
-- *Section numbering* — insert or update hierarchical section numbers (1, 1.1, 1.1.2) across all headings, with a separate command to strip them
+- *Section numbering* — insert or update hierarchical section numbers with configurable start index (0 or 1), with a separate command to strip them
 
 * Installation
 
@@ -125,7 +127,7 @@ Set ~outline-stars-section-comments~ to nil for the original ~outshine~ conventi
 | ~outline-stars-promote-subtree~   | Always promote heading and all children by one level |
 | ~outline-stars-demote-subtree~    | Always demote heading and all children by one level  |
 | ~outline-stars-narrow-to-subtree~ | Narrow buffer to the current subtree                 |
-| ~outline-stars-cycle-buffer~      | Cycle visibility: all → headings → top-level → all   |
+| ~outline-stars-cycle-buffer~      | Cycle visibility: folded → content → show all        |
 | ~outline-stars-sort-siblings~     | Alphabetically sort sibling headings with subtrees   |
 | ~outline-stars-number-headings~   | Insert or update section numbers (1, 1.1, 1.1.2)     |
 | ~outline-stars-strip-numbers~     | Remove section numbers from all headings             |
@@ -147,13 +149,16 @@ To customize per-mode:
 
 * Customization
 
-| Variable                        | Default     | Description                                         |
-|---------------------------------+-------------+-----------------------------------------------------|
-| ~outline-stars-modes~             | ~(prog-mode)~ | Parent modes where stars activate                   |
-| ~outline-stars-max-level~         | ~8~           | Maximum heading depth                               |
-| ~outline-stars-promote-subtree-p~ | ~t~           | Whether promote/demote operates on the full subtree |
-| ~outline-stars-section-comments~  | ~t~           | Use section-level comments (~;;;~, ~###~) as prefix     |
-| ~outline-stars-level-1-overline~  | ~nil~         | Add an overline to top-level headings               |
+| Variable                          | Default     | Description                                           |
+|-----------------------------------+-------------+-------------------------------------------------------|
+| ~outline-stars-modes~               | ~(prog-mode)~ | Parent modes where stars activate                     |
+| ~outline-stars-max-level~           | ~8~           | Maximum heading depth                                 |
+| ~outline-stars-promote-subtree-p~   | ~t~           | Whether promote/demote operates on the full subtree   |
+| ~outline-stars-section-comments~    | ~t~           | Use section-level comments (~;;;~, ~###~) as prefix       |
+| ~outline-stars-level-1-overline~    | ~nil~         | Add an overline to top-level headings                 |
+| ~outline-stars-default-state~       | ~nil~         | Startup visibility: ~folded~, ~content~, ~show-all~, or ~nil~ |
+| ~outline-stars-default-state-alist~ | ~nil~         | Per-mode overrides for ~outline-stars-default-state~    |
+| ~outline-stars-number-start~        | ~1~           | Starting number for section numbering (0 or 1)        |
 
 * Technical Details
 
@@ -175,6 +180,17 @@ To customize per-mode:
 On Emacs 29+, several major modes set ~outline-search-function~, which outline commands check /before/ ~outline-regexp~.  When non-nil, ~outline-regexp~ is silently ignored regardless of its value.  ~outline-stars~ nullifies this variable buffer-locally so that its custom regexp is consulted.
 
 Heading level resolution uses a pre-seeded ~outline-heading-alist~ for fast lookup.  Rather than running a regexp match and counting stars on every ~outline-level~ call, the alist maps each heading string directly to its level number, with a fallback to star counting for robustness.
+
+Default visibility state is applied immediately at the end of setup (for non-file buffers) and again on ~hack-local-variables-hook~ (for file-visiting buffers).  This ensures file-local variable overrides (~outline-stars-default-state: folded~) take effect, since ~hack-local-variables~ runs after ~after-change-major-mode-hook~.
+
+* Related Packages
+
+Several other packages address code folding and outline navigation in Emacs.  ~outline-stars~ specializes in zero-config extensions to ~outline-minor-mode~.  However, these alternatives may better suit different workflows:
+
+- [[https://github.com/jdtsmith/outli][outli]] — similar goals with richer visual styling (blended backgrounds, overlines on all levels) and per-mode configurability via a stem/repeat-char alist; a good choice for users who want fine-grained control over heading appearance
+- [[https://github.com/alphapapa/outshine][outshine]] — the original star-heading package that inspired this work; provides a full ~org~-emulation layer with speed commands, ~outorg~ integration, and LaTeX support
+- [[https://github.com/jamescherti/kirigami.el][kirigami]] — a unified fold/unfold dispatcher that routes to whichever folding backend is active (~outline~, ~hs-minor-mode~, ~treesit-fold~, ~origami~, /etc./); complementary to ~outline-stars~ rather than a replacement
+- [[https://github.com/jdtsmith/outline-indent][outline-indent]] — indentation-based folding for Python, YAML, and similar languages where structure is determined by whitespace rather than explicit markers
 
 * Contributing
 
