@@ -4,6 +4,16 @@
 
 All notable changes to ~outline-stars~ are documented in this file.
 
+* 0.4.0 (2026-04-16)
+
+- ~outline-stars-level-1-overline~ replaced by ~outline-stars-overline~: accepts ~nil~ (off), ~level-1~ (top-level only), or ~t~ (all levels); each level's overline is colored from its face foreground
+- New customization ~outline-stars-auto-number~ (default ~t~): ~outline-stars-insert-heading~ computes and inserts the next section number; ~outline-stars-promote~, ~outline-stars-demote~, and ~outline-stars-sort-siblings~ renumber all headings automatically
+- ~outline-stars-insert-heading~ now detects blank line spacing contextually: mirrors the heading's spacing when on a heading, or reuses existing blank lines above point when in body text
+- New command ~outline-stars-number-subtree~: number headings within the current parent's subtree
+- New command ~outline-stars-number-region~: number headings within the active region; the shallowest level found becomes the top-level number
+- Numbering internals refactored into region-aware ~outline-stars--number-in-region~ and ~outline-stars--strip-numbers-in-region~ for shared use by all numbering commands
+- Fixed ~outline-stars--next-number~ not reading the heading number when point was at end of line
+
 * 0.3.0 (2026-04-04)
 
 - Pre-seeded ~outline-heading-alist~ for fast level lookup via alist instead of regexp matching on every call

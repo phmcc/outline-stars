@@ -22,14 +22,14 @@ By default, headings use section-level comment prefixes (/e.g./, ~;;; *~ in elis
 
 - *Comment-aware heading detection* — derives the heading prefix from ~comment-start~ and ~comment-add~; works across elisp, R, Python, shell, C, and any other mode with a comment convention
 - *Per-level fontification* — applies ~outline-stars-level-N~ faces to heading text only, leaving the comment prefix and stars in their original face
-- *Optional top-level overline* — adds an overline to level-1 headings for visual section breaks, via ~outline-stars-level-1-overline~
+- *Optional heading overline* — adds an overline to heading lines; configurable via ~outline-stars-overline~ (~nil~, ~level-1~, or ~t~ for all levels)
 - *Automatic TAB cycling* — enables ~outline-minor-mode-cycle~ so =TAB= on a heading cycles visibility with no manual configuration
 - *Startup visibility state* — configurable initial folding via ~outline-stars-default-state~: ~folded~ (top-level only), ~content~ (all headings, body hidden), or ~show-all~; overridable per-mode via ~outline-stars-default-state-alist~ or per-file via file-local variables
 - *Imenu integration* — exposes star headings as navigable ~imenu~ entries alongside any existing mode entries
 - *Star-aware promote/demote* — single-heading and whole-subtree variants, with configurable default behavior via ~outline-stars-promote-subtree-p~
 - *Global visibility cycling* — cycles through folded, content, and show all from any point in the buffer
 - *Sibling sorting* — alphabetically sort headings at the same level, carrying their subtrees
-- *Section numbering* — insert or update hierarchical section numbers with configurable start index (0 or 1), with a separate command to strip them
+- *Section numbering* — insert or update hierarchical section numbers with configurable start index (0 or 1), auto-numbering on heading insertion, and scoped numbering (whole buffer, subtree, or region)
 
 * Installation
 
@@ -131,7 +131,9 @@ Set ~outline-stars-section-comments~ to nil for the original ~outshine~ conventi
 | ~outline-stars-narrow-to-subtree~ | Narrow buffer to the current subtree                 |
 | ~outline-stars-cycle-buffer~      | Cycle visibility: folded → content → show all        |
 | ~outline-stars-sort-siblings~     | Alphabetically sort sibling headings with subtrees   |
-| ~outline-stars-number-headings~   | Insert or update section numbers (1, 1.1, 1.1.2)     |
+| ~outline-stars-number-headings~   | Insert or update section numbers in the whole buffer  |
+| ~outline-stars-number-subtree~    | Number headings within the current parent's subtree  |
+| ~outline-stars-number-region~     | Number headings within the active region             |
 | ~outline-stars-strip-numbers~     | Remove section numbers from all headings             |
 
 All standard ~outline-minor-mode~ commands (~outline-cycle~, ~outline-hide-sublevels~, ~outline-move-subtree-up~, /etc./) work as expected with star headings.
@@ -157,10 +159,11 @@ To customize per-mode:
 | ~outline-stars-max-level~           | ~8~           | Maximum heading depth                                 |
 | ~outline-stars-promote-subtree-p~   | ~t~           | Whether promote/demote operates on the full subtree   |
 | ~outline-stars-section-comments~    | ~t~           | Use section-level comments (~;;;~, ~###~) as prefix       |
-| ~outline-stars-level-1-overline~    | ~nil~         | Add an overline to top-level headings                 |
+| ~outline-stars-overline~            | ~nil~         | Heading overline: ~nil~, ~level-1~, or ~t~ (all levels)      |
 | ~outline-stars-default-state~       | ~nil~         | Startup visibility: ~folded~, ~content~, ~show-all~, or ~nil~ |
 | ~outline-stars-default-state-alist~ | ~nil~         | Per-mode overrides for ~outline-stars-default-state~    |
 | ~outline-stars-number-start~        | ~1~           | Starting number for section numbering (0 or 1)        |
+| ~outline-stars-auto-number~         | ~t~           | Auto-number on insert, renumber on promote/demote     |
 
 * Technical Details
 

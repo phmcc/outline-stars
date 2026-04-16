@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Paul Hsin-ti McClelland
 
 ;; Author: Paul Hsin-ti McClelland <PaulHMcClelland@protonmail.com>
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://codeberg.org/phmcc/outline-stars
 ;; Keywords: outlines, convenience
@@ -33,13 +33,14 @@
 ;; Features:
 ;;   - Comment-aware heading detection using `comment-start' and `comment-add'
 ;;   - Per-level fontification via `outline-stars-level-N' faces
-;;   - Optional overline on top-level headings for visual section breaks
+;;   - Optional overline on heading lines (top-level only, or all levels)
 ;;   - `imenu' integration for heading navigation
 ;;   - Subtree promote/demote that optionally updates all child headings
 ;;   - Global visibility cycling (folded → content → show-all)
 ;;   - Startup visibility state (folded, content, show-all) per-buffer or per-mode
 ;;   - Alphabetical sorting of sibling headings
-;;   - Section numbering (0, 0.1, ... or 1, 1.1, ...) with insert/strip
+;;   - Section numbering (0, 0.1, ... or 1, 1.1, ...) with insert/strip/auto
+;;   - Scoped numbering: whole buffer, current subtree, or active region
 ;;   - Automatic TAB cycling on headings via `outline-minor-mode-cycle'
 ;;   - Nullifies `outline-search-function' (Emacs 29+) so custom regexps work
 ;;   - Runs on `after-change-major-mode-hook' to override mode-specific defaults
@@ -98,12 +99,17 @@ When nil, uses the classic outshine convention (;; *, ## *, # *)."
   :type 'boolean
   :group 'outline-stars)
 
-(defcustom outline-stars-level-1-overline nil
-  "Whether to add an overline to top-level heading lines.
-The overline color is taken from the `outline-stars-level-1'
-foreground at setup time.  If you change themes, re-evaluate
-`outline-stars-setup' in affected buffers to update the color."
-  :type 'boolean
+(defcustom outline-stars-overline nil
+  "Whether to add an overline to heading lines.
+When nil (the default), no overline is drawn.  When `level-1',
+only top-level headings receive an overline.  When t, all heading
+levels receive an overline in their respective face color.
+The overline color is resolved at setup time from each level's
+`outline-stars-level-N' foreground.  If you change themes,
+re-evaluate `outline-stars-setup' in affected buffers."
+  :type '(choice (const :tag "No overline" nil)
+                 (const :tag "Top-level only" level-1)
+                 (const :tag "All levels" t))
   :group 'outline-stars)
 
 (defcustom outline-stars-default-state nil
@@ -142,6 +148,12 @@ Set to 0 for zero-based numbering (0, 0.1, 0.2, ...),
 or 1 for one-based numbering (1, 1.1, 1.2, ...)."
   :type '(choice (const :tag "Zero-based (0, 0.1, ...)" 0)
                  (const :tag "One-based (1, 1.1, ...)" 1))
+  :group 'outline-stars)
+
+(defcustom outline-stars-auto-number t
+  "Whether `outline-stars-insert-heading' auto-inserts a section number.
+When non-nil, promote/demote commands also renumber all headings."
+  :type 'boolean
   :group 'outline-stars)
 
 ;;; ** 1.2 Faces
@@ -259,9 +271,8 @@ Uses `outline-heading-alist' for fast lookup, with fallback."
 
 (defun outline-stars--add-font-lock (qprefix)
   "Add font-lock keywords for star headings using QPREFIX.
-Faces apply to heading text only (group 1).  When
-`outline-stars-level-1-overline' is non-nil, a uniform-color
-overline spans the entire heading line (group 0)."
+Faces apply to heading text only (group 1).  Overlines are
+controlled by `outline-stars-overline'."
   (let ((keywords
          (cl-loop for level from 1 to outline-stars-max-level
                   for face = (intern (format "outline-stars-level-%d" level))
@@ -269,10 +280,11 @@ overline spans the entire heading line (group 0)."
                                    qprefix
                                    (format "[*]\\{%d\\}" level))
                   collect `(,re (1 ',face t))
-                  when (and (= level 1) outline-stars-level-1-overline)
+                  when (or (eq outline-stars-overline t)
+                           (and (eq outline-stars-overline 'level-1)
+                                (= level 1)))
                   collect `(,re (0 '(:overline ,(face-foreground
-                                                 'outline-stars-level-1
-                                                 nil t))
+                                                  face nil t))
                                 append)))))
     (setq outline-stars--font-lock-keywords keywords)
     (font-lock-add-keywords nil keywords)
@@ -363,37 +375,89 @@ if the buffer is visiting a file (allowing file-local overrides)."
 
 ;;;###autoload
 (defun outline-stars-insert-heading ()
-  "Insert a new heading at the current level after the current line."
+  "Insert a new heading at the current level.
+When `outline-stars-auto-number' is non-nil, a section number is
+computed and inserted automatically.  Blank line spacing is
+determined contextually: from the current heading when on one, or
+from existing blank lines above point when in body text.  The new
+heading is always placed on its own line, never joined with
+surrounding text."
   (interactive)
   (let* ((prefix (outline-stars--comment-prefix))
+         (on-heading (outline-on-heading-p t))
          (level (save-excursion
                   (condition-case nil
                       (progn
-                        (unless (outline-on-heading-p t)
+                        (unless on-heading
                           (outline-back-to-heading t))
                         (funcall outline-level))
-                    (error 1)))))
-    (end-of-line)
-    (newline)
-    (insert prefix " " (make-string level ?*) " ")))
+                    (error 1))))
+         (number-str (when outline-stars-auto-number
+                       (outline-stars--next-number level)))
+         (heading-text (concat prefix " " (make-string level ?*) " "
+                               (or number-str "")
+                               (if number-str " " "")))
+         (blank-lines
+          (save-excursion
+            (if on-heading
+                (outline-back-to-heading t)
+              (forward-line 0))
+            (let ((count 0))
+              (while (and (not (bobp))
+                          (progn (forward-line -1)
+                                 (looking-at-p "^[[:blank:]]*$")))
+                (setq count (1+ count)))
+              count))))
+    (if (and (not on-heading) (> blank-lines 0))
+        ;; In body text with blank lines above: consume them and place
+        ;; the heading where they were, leaving any text on its own line below.
+        (let* ((line-start (save-excursion (forward-line 0) (point)))
+               (current-blank (save-excursion
+                                (goto-char line-start)
+                                (looking-at-p "^[[:blank:]]*$"))))
+          ;; Move to start of the first blank line above
+          (goto-char line-start)
+          (forward-line (- blank-lines))
+          (let ((del-end (save-excursion
+                           (goto-char line-start)
+                           (if current-blank
+                               (progn (forward-line 1) (point))
+                             (point)))))
+            (delete-region (point) del-end))
+          ;; Now at the spot where blank lines began
+          (insert (make-string blank-lines ?\n) heading-text)
+          ;; Ensure following content is separated by at least a newline
+          (unless (or (eobp) (looking-at-p "\n"))
+            (save-excursion (insert "\n"))))
+      ;; On a heading, or in body text with no blank lines above
+      (end-of-line)
+      (insert (make-string (1+ blank-lines) ?\n) heading-text))))
 
 ;;; ** 5.3 Promote/Demote
 
 ;;;###autoload
 (defun outline-stars-promote ()
-  "Promote heading (or subtree if `outline-stars-promote-subtree-p')."
+  "Promote heading (or subtree if `outline-stars-promote-subtree-p').
+When `outline-stars-auto-number' is non-nil, renumber the
+containing parent subtree."
   (interactive)
   (if outline-stars-promote-subtree-p
       (outline-stars-promote-subtree)
-    (outline-stars--promote-single)))
+    (outline-stars--promote-single)
+    (when outline-stars-auto-number
+      (outline-stars--renumber-parent-subtree))))
 
 ;;;###autoload
 (defun outline-stars-demote ()
-  "Demote heading (or subtree if `outline-stars-promote-subtree-p')."
+  "Demote heading (or subtree if `outline-stars-promote-subtree-p').
+When `outline-stars-auto-number' is non-nil, renumber the
+containing parent subtree."
   (interactive)
   (if outline-stars-promote-subtree-p
       (outline-stars-demote-subtree)
-    (outline-stars--demote-single)))
+    (outline-stars--demote-single)
+    (when outline-stars-auto-number
+      (outline-stars--renumber-parent-subtree))))
 
 (defun outline-stars--promote-single ()
   "Promote only the current heading by one star."
@@ -419,7 +483,9 @@ if the buffer is visiting a file (allowing file-local overrides)."
 
 ;;;###autoload
 (defun outline-stars-promote-subtree ()
-  "Promote the current heading and all children by one level."
+  "Promote the current heading and all children by one level.
+When `outline-stars-auto-number' is non-nil, renumber the
+containing parent subtree."
   (interactive)
   (save-excursion
     (outline-back-to-heading t)
@@ -436,11 +502,15 @@ if the buffer is visiting a file (allowing file-local overrides)."
                   (when (> cur-level 1)
                     (re-search-forward "[*]+" (line-end-position) t)
                     (replace-match (make-string (1- cur-level) ?*)))))
-              (forward-line 1))))))))
+              (forward-line 1)))))))
+  (when outline-stars-auto-number
+    (outline-stars--renumber-parent-subtree)))
 
 ;;;###autoload
 (defun outline-stars-demote-subtree ()
-  "Demote the current heading and all children by one level."
+  "Demote the current heading and all children by one level.
+When `outline-stars-auto-number' is non-nil, renumber the
+containing parent subtree."
   (interactive)
   (save-excursion
     (outline-back-to-heading t)
@@ -465,7 +535,55 @@ if the buffer is visiting a file (allowing file-local overrides)."
               (let ((cur-level (funcall outline-level)))
                 (re-search-forward "[*]+" (line-end-position) t)
                 (replace-match (make-string (1+ cur-level) ?*))))
-            (forward-line 1)))))))
+            (forward-line 1))))))
+  (when outline-stars-auto-number
+    (outline-stars--renumber-parent-subtree)))
+
+(defun outline-stars--renumber-parent-subtree ()
+  "Renumber the subtree of the current heading's parent.
+Children inherit the parent's full number as their prefix.  If the
+current heading has no parent heading above it, renumbers the
+whole buffer instead."
+  (save-excursion
+    (when (outline-on-heading-p t)
+      (outline-back-to-heading t))
+    (let* ((current-level (funcall outline-level))
+           (parent-pos nil))
+      ;; Walk backwards to find the nearest heading at a strictly lower level.
+      (save-excursion
+        (while (and (not parent-pos)
+                    (not (bobp))
+                    (condition-case nil
+                        (progn (outline-previous-heading) t)
+                      (error nil)))
+          (when (and (outline-on-heading-p t)
+                     (looking-at outline-regexp)
+                     (< (funcall outline-level) current-level))
+            (setq parent-pos (point)))))
+      (if (not parent-pos)
+          ;; No parent found: fall back to whole-buffer renumber
+          (outline-stars-number-headings)
+        ;; Jump to parent and renumber its subtree
+        (goto-char parent-pos)
+        (looking-at outline-regexp)
+        (let* ((parent-level (funcall outline-level))
+               (parent-counters
+                (when (save-excursion
+                        (goto-char (match-end 0))
+                        (looking-at outline-stars--number-regexp))
+                  (mapcar #'string-to-number
+                          (split-string (match-string-no-properties 1) "\\."))))
+               ;; Pad intermediate counters (if any skipped levels) with
+               ;; number-start so implied ancestors appear as first siblings.
+               (implied-ancestors (max 0 (- current-level parent-level 1)))
+               (initial-counters
+                (when parent-counters
+                  (append parent-counters
+                          (make-list implied-ancestors
+                                     outline-stars-number-start))))
+               (beg (save-excursion (forward-line 1) (point)))
+               (end (save-excursion (outline-end-of-subtree) (point))))
+          (outline-stars--number-in-region beg end nil initial-counters))))))
 
 ;;; * 6 Visibility Cycling
 
@@ -495,7 +613,8 @@ with body text hidden.  Show all reveals everything."
 ;;;###autoload
 (defun outline-stars-sort-siblings (&optional reverse-p)
   "Sort sibling headings alphabetically under the current parent.
-With prefix argument REVERSE-P, sort in reverse order."
+With prefix argument REVERSE-P, sort in reverse order.
+When `outline-stars-auto-number' is non-nil, renumber all headings."
   (interactive "P")
   (save-excursion
     (condition-case nil
@@ -543,7 +662,9 @@ With prefix argument REVERSE-P, sort in reverse order."
                       (new-text (cdr pair)))
                   (delete-region (nth 1 orig) (nth 2 orig))
                   (goto-char (nth 1 orig))
-                  (insert new-text))))))))))
+                  (insert new-text)))))))))
+  (when outline-stars-auto-number
+    (outline-stars-number-headings)))
 
 ;;; * 8 Section Numbering
 
@@ -551,48 +672,159 @@ With prefix argument REVERSE-P, sort in reverse order."
   "\\([0-9]+\\(?:\\.[0-9]+\\)*\\) "
   "Regexp matching a section number followed by a space.")
 
-;;;###autoload
-(defun outline-stars-number-headings ()
-  "Insert or update hierarchical section numbers on all headings.
-Idempotent: strips existing numbers first.  Starting number is
-controlled by `outline-stars-number-start'."
-  (interactive)
-  (outline-stars-strip-numbers)
+(defun outline-stars--next-number (_level)
+  "Compute the next section number by incrementing the current heading's number.
+Returns nil if the current heading has no number."
   (save-excursion
-    (goto-char (point-min))
-    (let ((counters (make-vector (1+ outline-stars-max-level)
-                                 (1- outline-stars-number-start))))
-      (while (not (eobp))
-        (when (and (outline-on-heading-p t)
-                   (looking-at outline-regexp))
-          (let* ((level (funcall outline-level))
-                 (match-end-pos (match-end 0)))
-            (aset counters level (1+ (aref counters level)))
-            (cl-loop for i from (1+ level) to outline-stars-max-level
-                     do (aset counters i (1- outline-stars-number-start)))
-            (let ((number-str
-                   (concat
-                    (mapconcat (lambda (i) (number-to-string (aref counters i)))
-                               (number-sequence 1 level)
-                               ".")
-                    " ")))
-              (goto-char match-end-pos)
-              (insert number-str))))
-        (forward-line 1)))))
+    (outline-back-to-heading t)
+    (when (and (looking-at outline-regexp)
+               (save-excursion
+                 (goto-char (match-end 0))
+                 (looking-at outline-stars--number-regexp)))
+      (let* ((num-str (match-string-no-properties 1))
+             (parts (mapcar #'string-to-number
+                            (split-string num-str "\\.")))
+             (incremented (append (butlast parts)
+                                  (list (1+ (car (last parts)))))))
+        (mapconcat #'number-to-string incremented ".")))))
 
-;;;###autoload
-(defun outline-stars-strip-numbers ()
-  "Remove section numbers from all headings."
-  (interactive)
+(defun outline-stars--strip-numbers-in-region (beg end)
+  "Remove section numbers from headings between BEG and END."
   (save-excursion
-    (goto-char (point-min))
-    (while (not (eobp))
+    (goto-char beg)
+    (while (< (point) end)
       (when (and (outline-on-heading-p t)
                  (looking-at outline-regexp))
         (goto-char (match-end 0))
         (when (looking-at outline-stars--number-regexp)
           (delete-region (match-beginning 0) (match-end 0))))
       (forward-line 1))))
+
+(defun outline-stars--number-in-region (beg end &optional base-level initial-counters)
+  "Insert section numbers on headings between BEG and END.
+BASE-LEVEL is the heading level just above the top of the
+numbering hierarchy; headings at level BASE-LEVEL+1 become the
+top level of the numbering (default 0, so level 1 is top).
+INITIAL-COUNTERS, if provided, is a list of counter values to
+seed the counter array (for inheriting from preceding headings).
+Strips existing numbers first.  Uses markers internally so
+boundary tracking survives insertions and deletions."
+  (let ((end-marker (copy-marker end)))
+    (unwind-protect
+        (progn
+          (outline-stars--strip-numbers-in-region beg end-marker)
+          (let ((base (or base-level 0)))
+            (save-excursion
+              (goto-char beg)
+              (let ((counters (make-vector (1+ outline-stars-max-level)
+                                           (1- outline-stars-number-start))))
+                (when initial-counters
+                  (cl-loop for val in initial-counters
+                           for i from 1
+                           do (aset counters i val)))
+                (while (< (point) end-marker)
+                  (when (and (outline-on-heading-p t)
+                             (looking-at outline-regexp))
+                    (let* ((level (funcall outline-level))
+                           (rel-level (- level base))
+                           (match-end-pos (match-end 0)))
+                      (when (> rel-level 0)
+                        (aset counters rel-level (1+ (aref counters rel-level)))
+                        (cl-loop for i from (1+ rel-level) to outline-stars-max-level
+                                 do (aset counters i (1- outline-stars-number-start)))
+                        (let ((number-str
+                               (concat
+                                (mapconcat (lambda (i)
+                                            (number-to-string (aref counters i)))
+                                           (number-sequence 1 rel-level)
+                                           ".")
+                                " ")))
+                          (goto-char match-end-pos)
+                          (insert number-str)))))
+                  (forward-line 1))))))
+      (set-marker end-marker nil))))
+
+;;;###autoload
+(defun outline-stars-number-headings ()
+  "Insert or update section numbers on all headings in the buffer.
+Idempotent.  Starting number controlled by `outline-stars-number-start'."
+  (interactive)
+  (outline-stars--number-in-region (point-min) (point-max)))
+
+;;;###autoload
+(defun outline-stars-number-subtree ()
+  "Insert or update section numbers within the current parent's subtree.
+Numbering is self-contained: the first child heading gets number 1
+(or 0 if `outline-stars-number-start' is 0)."
+  (interactive)
+  (save-excursion
+    (condition-case nil
+        (outline-up-heading 1 t)
+      (error (goto-char (point-min))))
+    (let* ((parent-level (if (outline-on-heading-p t)
+                             (funcall outline-level)
+                           0))
+           ;; Start after the parent heading line
+           (beg (save-excursion
+                  (when (outline-on-heading-p t)
+                    (forward-line 1))
+                  (point)))
+           (end (save-excursion
+                  (if (outline-on-heading-p t)
+                      (progn (outline-end-of-subtree) (point))
+                    (point-max)))))
+      (outline-stars--number-in-region beg end parent-level))))
+
+;;;###autoload
+(defun outline-stars-number-region (beg end)
+  "Insert or update section numbers on headings in the active region.
+The shallowest heading level found becomes the top-level number.
+Numbering inherits from the last heading at that level before the region."
+  (interactive "r")
+  (let ((min-level outline-stars-max-level)
+        (initial-counters nil))
+    ;; Find the minimum heading level in the region
+    (save-excursion
+      (goto-char beg)
+      (while (< (point) end)
+        (when (and (outline-on-heading-p t)
+                   (looking-at outline-regexp))
+          (setq min-level (min min-level (funcall outline-level))))
+        (forward-line 1)))
+    (when (<= min-level outline-stars-max-level)
+      ;; Find the last numbered heading before the region at min-level
+      (save-excursion
+        (goto-char beg)
+        (let ((found nil))
+          (while (and (not found)
+                      (not (bobp))
+                      (condition-case nil
+                          (progn (outline-previous-heading) t)
+                        (error nil)))
+            (when (and (outline-on-heading-p t)
+                       (looking-at outline-regexp)
+                       (= (funcall outline-level) min-level)
+                       (save-excursion
+                         (goto-char (match-end 0))
+                         (looking-at outline-stars--number-regexp)))
+              ;; Parse full number; the last part becomes (counter - 1)
+              ;; so the next increment produces the sibling's next number.
+              ;; All earlier parts stay as-is (shared parent prefix).
+              (let* ((num-str (match-string-no-properties 1))
+                     (parts (mapcar #'string-to-number
+                                    (split-string num-str "\\.")))
+                     (last-part (car (last parts)))
+                     (prefix-parts (butlast parts)))
+                (setq initial-counters
+                      (append prefix-parts (list last-part)))
+                (setq found t))))))
+      (outline-stars--number-in-region beg end nil initial-counters))))
+
+;;;###autoload
+(defun outline-stars-strip-numbers ()
+  "Remove section numbers from all headings in the buffer."
+  (interactive)
+  (outline-stars--strip-numbers-in-region (point-min) (point-max)))
 
 ;;; * 9 Provide
 
