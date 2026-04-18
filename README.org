@@ -131,9 +131,9 @@ Set ~outline-stars-section-comments~ to nil for the original ~outshine~ conventi
 | ~outline-stars-narrow-to-subtree~ | Narrow buffer to the current subtree                 |
 | ~outline-stars-cycle-buffer~      | Cycle visibility: folded → content → show all        |
 | ~outline-stars-sort-siblings~     | Alphabetically sort sibling headings with subtrees   |
-| ~outline-stars-number-headings~   | Insert or update section numbers in the whole buffer  |
+| ~outline-stars-number-headings~   | Insert or update section numbers in the whole buffer |
 | ~outline-stars-number-subtree~    | Number headings within the current parent's subtree  |
-| ~outline-stars-number-region~     | Number headings within the active region             |
+| ~outline-stars-number-region~     | Number headings in the active region (inherits)      |
 | ~outline-stars-strip-numbers~     | Remove section numbers from all headings             |
 
 All standard ~outline-minor-mode~ commands (~outline-cycle~, ~outline-hide-sublevels~, ~outline-move-subtree-up~, /etc./) work as expected with star headings.
@@ -159,7 +159,7 @@ To customize per-mode:
 | ~outline-stars-max-level~           | ~8~           | Maximum heading depth                                 |
 | ~outline-stars-promote-subtree-p~   | ~t~           | Whether promote/demote operates on the full subtree   |
 | ~outline-stars-section-comments~    | ~t~           | Use section-level comments (~;;;~, ~###~) as prefix       |
-| ~outline-stars-overline~            | ~nil~         | Heading overline: ~nil~, ~level-1~, or ~t~ (all levels)      |
+| ~outline-stars-overline~            | ~nil~         | Heading overline: ~nil~, ~level-1~, or ~t~ (all levels)     |
 | ~outline-stars-default-state~       | ~nil~         | Startup visibility: ~folded~, ~content~, ~show-all~, or ~nil~ |
 | ~outline-stars-default-state-alist~ | ~nil~         | Per-mode overrides for ~outline-stars-default-state~    |
 | ~outline-stars-number-start~        | ~1~           | Starting number for section numbering (0 or 1)        |
