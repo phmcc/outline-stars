@@ -6,7 +6,7 @@
 
 [[file:./img/example.png]]
 
-~outline-stars~ brings ~org~-like section folding to non-~org~ buffers using star-based comment headings (~;;; *~, ~### *~, ~// *~, /etc./) and the built-in ~outline-minor-mode~.  It handles comment prefix detection, per-level fontification, ~imenu~ integration, and star-aware structure editing in a single, dependency-free file.
+~outline-stars~ brings ~org~-like section folding to non-~org~ buffers using star-based comment headings (~;;; *~, ~### *~, ~// *~, /etc./) and the built-in ~outline-minor-mode~.  It handles comment prefix detection, per-level fontification, ~imenu~ integration, automatic numbering, and star-aware structure editing in a single, dependency-free file.
 
 * Design and Scope
 
