@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Paul Hsin-ti McClelland
 
 ;; Author: Paul Hsin-ti McClelland <PaulHMcClelland@protonmail.com>
-;; Version: 0.4.1
+;; Version: 0.4.3
 ;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://codeberg.org/phmcc/outline-stars
 ;; Keywords: outlines, convenience
@@ -42,7 +42,7 @@
 ;;   - Section numbering (0, 0.1, ... or 1, 1.1, ...) with insert/strip/auto
 ;;   - Scoped numbering: whole buffer, current subtree, or active region
 ;;   - Automatic TAB cycling on headings via `outline-minor-mode-cycle'
-;;   - Nullifies `outline-search-function' (Emacs 29+) so custom regexps work
+;;   - Installs an `outline-regexp'-driven `outline-search-function' (Emacs 29+)
 ;;   - Runs on `after-change-major-mode-hook' to override mode-specific defaults
 ;;
 ;; Usage:
@@ -68,7 +68,7 @@
 ;;; ** 1.1 Customization
 
 (defgroup outline-stars nil
-  "Outshine-style star headings for outline-minor-mode."
+  "Outshine-style star headings for `outline-minor-mode'."
   :group 'outline
   :prefix "outline-stars-")
 
@@ -140,7 +140,7 @@ The first match wins."
   :group 'outline-stars)
 
 (defcustom outline-stars-auto-number t
-  "Whether to auto-insert section numbers on heading insertion.
+  "Whether to automatically insert section numbers on heading insertion.
 When non-nil, promote/demote also renumber the parent subtree."
   :type 'boolean
   :group 'outline-stars)
@@ -180,13 +180,19 @@ When non-nil, promote/demote also renumber the parent subtree."
 (defvar-local outline-stars--active nil
   "Non-nil if outline-stars is active in this buffer.")
 
+(defconst outline-stars--number-regexp
+  "\\([0-9]+\\(?:\\.[0-9]+\\)*\\) "
+  "Regexp matching a section number followed by a space.
+Used both by the section-numbering machinery and by subtree
+promote/demote when reading a parent heading's number.")
+
 ;;; * 2 Comment Prefix
 
 (defun outline-stars--comment-prefix ()
   "Return the comment prefix for star headings.
-Derives from `comment-start' and `comment-add'.  Appends one
-extra character when `outline-stars-section-comments' is non-nil
-and `comment-start' is a single character."
+Derives from `comment-start' and the variable `comment-add'.
+Appends one extra character when `outline-stars-section-comments'
+is non-nil and `comment-start' is a single character."
   (when comment-start
     (let* ((cs (string-trim comment-start))
            (result (if (or (not comment-add) (zerop comment-add))
@@ -220,16 +226,33 @@ and `comment-start' is a single character."
                "[^*]" ""
                (match-string-no-properties 0)))))
 
-;;; ** 3.2 Activation
+;;; ** 3.2 Search Function
+
+(defun outline-stars--search-function (&optional bound move backward looking-at)
+  "Generic `outline-search-function' driven by `outline-regexp'.
+See the docstring of `outline-search-function' for the meaning of
+BOUND, MOVE, BACKWARD, and LOOKING-AT.  This is a local
+reimplementation of the helper being proposed for upstream
+inclusion as `outline-search-from-regexp'; once that lands in a
+future Emacs, this function can be replaced with a direct use of
+the core helper and the minimum-version requirement bumped."
+  (if looking-at
+      (looking-at outline-regexp)
+    (funcall (if backward #'re-search-backward #'re-search-forward)
+             (concat "^\\(?:" outline-regexp "\\)")
+             bound
+             (if move 'move t))))
+
+;;; ** 3.3 Activation
 
 (defun outline-stars-setup ()
-  "Set up outline-minor-mode with star headings in the current buffer."
+  "Set up `outline-minor-mode' with star headings in the current buffer."
   (when-let* ((prefix (outline-stars--comment-prefix)))
     (let* ((qprefix (regexp-quote prefix))
            (star-re (format "[*]\\{1,%d\\}" outline-stars-max-level))
            (out-regexp (concat qprefix " " star-re " ")))
       (outline-minor-mode 1)
-      (setq-local outline-search-function nil)
+      (setq-local outline-search-function #'outline-stars--search-function)
       (setq-local outline-regexp out-regexp)
       (setq-local outline-heading-alist
                   (outline-stars--build-heading-alist prefix))
@@ -249,7 +272,7 @@ and `comment-start' is a single character."
       (add-hook 'hack-local-variables-hook
                 #'outline-stars--apply-default-state nil t))))
 
-;;; ** 3.3 Fontification
+;;; ** 3.4 Fontification
 
 (defun outline-stars--add-font-lock (qprefix)
   "Add font-lock keywords for star headings using QPREFIX."
@@ -271,7 +294,7 @@ and `comment-start' is a single character."
     (when font-lock-mode
       (font-lock-flush))))
 
-;;; ** 3.4 Default Visibility State
+;;; ** 3.5 Default Visibility State
 
 (defun outline-stars--resolve-default-state ()
   "Return the effective default state for the current buffer.
@@ -292,10 +315,10 @@ Priority: file-local variable > per-mode alist > global default."
       ('show-all (outline-show-all))
       (_ nil))))
 
-;;; ** 3.5 Deactivation
+;;; ** 3.6 Deactivation
 
 (defun outline-stars-teardown ()
-  "Remove font-lock keywords and deactivate outline-minor-mode."
+  "Remove font-lock keywords and deactivate `outline-minor-mode'."
   (when outline-stars--font-lock-keywords
     (font-lock-remove-keywords nil outline-stars--font-lock-keywords)
     (setq outline-stars--font-lock-keywords nil)
@@ -646,9 +669,9 @@ With prefix argument REVERSE-P, sort in reverse order."
 
 ;;; * 8 Section Numbering
 
-(defconst outline-stars--number-regexp
-  "\\([0-9]+\\(?:\\.[0-9]+\\)*\\) "
-  "Regexp matching a section number followed by a space.")
+;; The shared regexp `outline-stars--number-regexp' is defined in
+;; section 1.3 (Internal Variables) so it is available to both this
+;; section and the subtree-promote machinery in section 5.4.
 
 (defun outline-stars--next-number ()
   "Return the next section number by incrementing the current heading's.
@@ -751,8 +774,8 @@ boundary tracking survives text changes."
 
 ;;;###autoload
 (defun outline-stars-number-region (beg end)
-  "Number headings in the active region, inheriting from the
-last numbered heading before the region at the shallowest level."
+  "Number headings between BEG and END at the shallowest level found.
+Inherits from the last numbered heading before the region."
   (interactive "r")
   (let ((min-level outline-stars-max-level)
         (initial-counters nil))

@@ -4,6 +4,20 @@
 
 All notable changes to ~outline-stars~ are documented in this file.
 
+* 0.4.3 (2026-04-27)
+
+- Move the ~outline-stars--number-regexp~ defconst into the internal-variables section so it is defined before its first use; resolves a byte-compile free-variable warning under Emacs 30.1
+- Quote ~outline-minor-mode~ as a symbol in the ~outline-stars~ defgroup, ~outline-stars-setup~, and ~outline-stars-teardown~ docstrings (checkdoc)
+- Reword the ~outline-stars-auto-number~ docstring to avoid the hyphenated form "auto-insert", which checkdoc misreads as a Lisp symbol
+- Disambiguate ~comment-add~ in the ~outline-stars--comment-prefix~ docstring as a variable reference (checkdoc)
+- Rewrite the ~outline-stars-number-region~ docstring with a complete first-line sentence and uppercase parameter mentions (checkdoc)
+
+* 0.4.2 (2026-04-21)
+
+- ~outline-stars-setup~ now installs ~outline-stars--search-function~ as a buffer-local ~outline-search-function~, replacing the previous ~(setq-local outline-search-function nil)~ which disabled the Emacs 29+ search-function machinery rather than driving it from ~outline-regexp~
+- New private function ~outline-stars--search-function~: an ~outline-regexp~-driven ~outline-search-function~ implementation; mirrors the ~outline-search-from-regexp~ helper proposed for upstream inclusion in Emacs core
+- Commentary block: refined the description of ~outline-search-function~ handling (no longer claims to "nullify" the variable)
+
 * 0.4.1 (2026-04-18)
 
 - ~outline-stars-insert-heading~ now normalizes spacing around the new heading to match the document convention: detects blank-line spacing from the nearest heading, then applies that spacing both above and below the new heading regardless of how much whitespace currently exists at point
